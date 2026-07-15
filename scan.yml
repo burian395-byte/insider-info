@@ -1,0 +1,43 @@
+name: Insider scan
+
+on:
+  schedule:
+    # 06:20 UTC v pracovné dni. SEC zverejňuje denný index večer ET.
+    - cron: "20 6 * * 1-5"
+  workflow_dispatch:      # manuálne spustenie tlačidlom v Actions
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Spustiť sken
+        env:
+          # SEC vyžaduje reálny kontakt, inak 403. Nastav v Settings > Secrets.
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          LOOKBACK_DAYS: "7"
+          WATCHLIST: ""        # prázdne = široký sken
+          MAX_FILINGS: "600"
+        run: python scan.py
+
+      - name: Skopírovať dáta pre dashboard
+        run: cp data/latest.json docs/latest.json
+
+      - name: Commitnúť výsledok
+        run: |
+          git config user.name  "insider-radar"
+          git config user.email "actions@github.com"
+          git add data/latest.json docs/latest.json
+          git diff --staged --quiet || git commit -m "sken $(date -u +%Y-%m-%d)"
+          git push
