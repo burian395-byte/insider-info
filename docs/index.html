@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar nahlásených obchodov</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap');
+
+  :root {
+    --paper: #E4E7E1;
+    --card:  #EDEFEA;
+    --ink:   #16211C;
+    --buy:   #2E5E4E;
+    --sell:  #A8322D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+  .cond { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+
+  .eyebrow { font-size: 10px; letter-spacing: .25em; text-transform: uppercase; opacity: .6; }
+  h1 { font-size: clamp(2.5rem, 7vw, 4.5rem); line-height: .9; margin: .5rem 0 0; font-weight: 700; }
+  h1 span { display: block; color: var(--buy); }
+  .lede { font-size: 12px; max-width: 40rem; line-height: 1.7; opacity: .8; margin-top: 1rem; }
+
+  .bar {
+    background: var(--card); border: 1px solid var(--ink); box-shadow: 2px 2px 0 var(--ink);
+    padding: .85rem 1rem; margin: 1.75rem 0 1.25rem;
+    display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; font-size: 11px;
+  }
+  .bar b { font-weight: 600; }
+  .filters { margin-left: auto; display: flex; gap: .5rem; }
+  button.f {
+    font: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    padding: .35rem .8rem; border: 1px solid var(--ink); background: transparent;
+    color: var(--ink); cursor: pointer;
+  }
+  button.f[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  button.f:focus-visible { outline: 2px solid var(--sell); outline-offset: 2px; }
+
+  .slip {
+    border: 1px solid var(--ink); background: var(--card);
+    box-shadow: 3px 3px 0 rgba(22,33,28,.18); margin-bottom: .75rem;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .slip { transition: box-shadow .15s ease; }
+    .slip:hover { box-shadow: 5px 5px 0 rgba(22,33,28,.22); }
+  }
+  .head {
+    width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit;
+    padding: .9rem 1rem; display: flex; gap: 1rem; align-items: flex-start; cursor: pointer;
+  }
+  .stamp {
+    border: 2px solid currentColor; border-radius: 2px; transform: rotate(-3deg);
+    font-size: 10px; font-weight: 600; letter-spacing: .1em; padding: .2rem .45rem;
+    flex-shrink: 0; margin-top: .2rem;
+  }
+  .tick { font-size: 1.3rem; font-weight: 700; }
+  .co { font-size: 11px; opacity: .6; }
+  .meta { font-size: 11px; opacity: .8; margin-top: .35rem; }
+  .score { margin-left: auto; text-align: right; flex-shrink: 0; }
+  .score b { font-size: 1.6rem; line-height: 1; display: block; }
+  .score span { font-size: 9px; letter-spacing: .15em; text-transform: uppercase; opacity: .5; }
+
+  .body { padding: 0 1rem 1rem; display: none; }
+  .slip.open .body { display: block; }
+  .hair { border-bottom: 1px dashed rgba(22,33,28,.35); margin-bottom: .75rem; }
+  .hit { display: flex; justify-content: space-between; font-size: 11px; padding: .1rem 0; }
+  .hit span:first-child { opacity: .75; }
+  a { color: inherit; }
+  footer { font-size: 10px; opacity: .55; line-height: 1.7; margin-top: 3rem; max-width: 44rem; }
+  .empty { border: 1px dashed var(--ink); padding: 3rem 1rem; text-align: center; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">SEC Form 4 · verejné disclosure filingy · nič neverejné</div>
+    <h1 class="cond">RADAR<span>NAHLÁSENÝCH OBCHODOV</span></h1>
+    <p class="lede">
+      Iba transakčné kódy <b>P</b> (nákup na trhu) a <b>S</b> (predaj). Granty,
+      uplatnené opcie a daňové zrážky sú odfiltrované — práve tie robia väčšinu
+      šumu v bežných insider trackeroch. Skóre počíta skript podľa pravidiel
+      nižšie, nie jazykový model.
+    </p>
+  </header>
+
+  <div class="bar" id="bar">Načítavam…</div>
+
+  <div id="list"></div>
+
+  <details style="margin-top:2rem">
+    <summary class="eyebrow" style="cursor:pointer">Bodovacie pravidlá</summary>
+    <div id="rules" style="margin-top:.75rem"></div>
+  </details>
+
+  <footer>
+    Dáta pochádzajú z povinných verejných hlásení SEC. Nie je to investičné
+    poradenstvo a body nie sú predikcia — sú to váhy, ktoré si sám nastavíš
+    v <code>rules.py</code>. Filing je v čase, keď ho vidíš, už z veľkej časti
+    v cene. Predaje insiderov majú historicky takmer nulovú výpovednú hodnotu;
+    sú tu len pre úplnosť obrazu.
+  </footer>
+</div>
+
+<script>
+const fmt = (d) => d ? new Date(d).toLocaleDateString('sk-SK') : '—';
+let DATA = null, filter = 'all';
+
+async function load() {
+  try {
+    const res = await fetch('latest.json?' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    DATA = await res.json();
+    render();
+  } catch (e) {
+    document.getElementById('bar').innerHTML =
+      '<b style="color:var(--sell)">latest.json sa nenačítal.</b> ' + e.message +
+      ' — spusti workflow v Actions, alebo otvor stránku cez lokálny server (<code>python -m http.server</code>), nie cez file://';
+  }
+}
+
+function render() {
+  const c = DATA.counts;
+  document.getElementById('bar').innerHTML = `
+    <span><b>${fmt(DATA.generatedAt)}</b> · okno ${DATA.lookbackDays} dní</span>
+    <span>${c.filingsFetched} filingov → <b>${c.valid}</b> platných</span>
+    <span>${DATA.watchlist.length ? DATA.watchlist.join(', ') : 'široký sken'}</span>
+    <span class="filters">
+      <button class="f" data-f="all">Všetko</button>
+      <button class="f" data-f="buy">Nákupy</button>
+      <button class="f" data-f="sell">Predaje</button>
+    </span>`;
+
+  document.querySelectorAll('button.f').forEach(b => {
+    b.setAttribute('aria-pressed', b.dataset.f === filter);
+    b.onclick = () => { filter = b.dataset.f; render(); };
+  });
+
+  document.getElementById('rules').innerHTML = DATA.rules.map(r => `
+    <div class="slip" style="box-shadow:none"><div style="padding:.6rem .8rem">
+      <div style="display:flex;justify-content:space-between;gap:1rem">
+        <b class="cond">${r.label}</b>
+        <b style="color:${r.points > 0 ? 'var(--buy)' : 'var(--sell)'}">${r.points > 0 ? '+' : ''}${r.points}</b>
+      </div>
+      <div style="font-size:11px;opacity:.7;margin-top:.2rem">${r.why}</div>
+    </div></div>`).join('');
+
+  const rows = DATA.signals.filter(s => filter === 'all' || s.action === filter);
+  const list = document.getElementById('list');
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty">Žiadny signál v tomto okne. Skús širšie okno alebo iný filter.</div>';
+    return;
+  }
+
+  list.innerHTML = rows.map((s, i) => {
+    const buy = s.action === 'buy';
+    const col = buy ? 'var(--buy)' : 'var(--sell)';
+    return `
+    <article class="slip" id="s${i}">
+      <button class="head" onclick="document.getElementById('s${i}').classList.toggle('open')">
+        <span class="stamp" style="color:${col}">${buy ? 'KÚPA' : 'PREDAJ'}</span>
+        <span style="min-width:0">
+          <span class="tick cond">${s.ticker}</span>
+          <span class="co">${s.company}</span>
+          <div class="meta">${s.actor} · ${s.role} · ${s.amountLabel}${
+            s.lagDays !== null ? ' · lag ' + s.lagDays + ' d' : ''}${
+            s.clusterCount > 1 ? ' · klaster ' + s.clusterCount : ''}</div>
+        </span>
+        <span class="score"><b style="color:${col}">${s.score}</b><span>body</span></span>
+      </button>
+      <div class="body">
+        <div class="hair"></div>
+        <div class="meta" style="margin:0 0 .6rem">
+          ${s.shares?.toLocaleString('sk-SK')} ks @ $${s.price} ·
+          transakcia ${fmt(s.txDate)} · nahlásené ${fmt(s.filedDate)} · kód ${s.code}
+        </div>
+        ${s.scoreHits.map(h => `<div class="hit"><span>${h.label}</span><span style="color:${
+          h.points > 0 ? 'var(--buy)' : 'var(--sell)'}">${h.points > 0 ? '+' : ''}${h.points}</span></div>`).join('')}
+        <a href="${s.sourceUrl}" target="_blank" rel="noreferrer"
+           style="font-size:11px;display:inline-block;margin-top:.7rem">Otvoriť filing ↗</a>
+      </div>
+    </article>`;
+  }).join('');
+}
+load();
+</script>
+</body>
+</html>
